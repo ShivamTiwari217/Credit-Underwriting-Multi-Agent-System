@@ -128,7 +128,7 @@ if st.button("🚀 Run Multi-Agent Underwriting Assessment", type="primary"):
     else:
         with st.spinner("Agents are analyzing document, executing deterministic calculations, and auditing policies..."):
             try:
-                gemini_llm = LLM(model="gemini/gemini-2.5-flash", temperature=0.1)
+                gemini_llm = LLM(model="gemini/gemini-3.6-flash", temperature=0.1)
 
                 intake_agent = Agent(
                     role="Senior Loan Intake Specialist",
