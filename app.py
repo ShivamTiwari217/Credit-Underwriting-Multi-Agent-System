@@ -20,18 +20,21 @@ st.title("🏦 Multi-Agent Credit Underwriting & RAG System")
 st.markdown("Powered by **CrewAI**, **Google Gemini**, **ChromaDB**, and **Streamlit**.")
 
 # ---------------------------------------------------------
-# 2. SIDEBAR CONFIGURATION & API KEYS
+# 2. SECURE ENVIRONMENT & API KEY CONFIGURATION
 # ---------------------------------------------------------
-st.sidebar.header("Configuration")
-api_key_input = st.sidebar.text_input("Enter Google Gemini API Key", type="password")
-
-if api_key_input:
-    os.environ["GOOGLE_API_KEY"] = api_key_input
-elif "GOOGLE_API_KEY" not in os.environ:
-    os.environ["GOOGLE_API_KEY"] = "your_actual_gemini_api_key_here"
-
 # Satisfy crewAI internal validator check
 os.environ["OPENAI_API_KEY"] = "not-needed-but-satisfies-check"
+
+# Load Gemini API Key securely from Streamlit Secrets or Sidebar fallback
+if "GOOGLE_API_KEY" in st.secrets:
+    os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+else:
+    st.sidebar.warning("⚠️ GOOGLE_API_KEY not found in Streamlit Secrets.")
+    api_key_input = st.sidebar.text_input("Enter Google Gemini API Key", type="password")
+    if api_key_input:
+        os.environ["GOOGLE_API_KEY"] = api_key_input
+    else:
+        os.environ["GOOGLE_API_KEY"] = "placeholder_key"
 
 # ---------------------------------------------------------
 # 3. SETUP CHROMA_DB POLICY RAG (Cached to prevent re-init)
@@ -44,7 +47,7 @@ def init_chroma_db():
         name="enterprise_lending_policies",
         embedding_function=emb_fn
     )
-    # Seed institutional lending policies
+    # Seed institutional lending policies and rules
     collection.add(
         documents=[
             "Rule 101: Minimum DSCR for commercial real estate and logistics loans must be 1.25x.",
@@ -69,7 +72,7 @@ def search_lending_policies(query: str) -> str:
     return "\n".join(documents) if documents else "No matching institutional policy found."
 
 # ---------------------------------------------------------
-# 4. TOOLS & AGENTS SETUP
+# 4. DETERMINISTIC TOOLS (PDF Reader & Cost-Optimized Math Calculator)
 # ---------------------------------------------------------
 @tool("Deterministic Financial Ratio Calculator")
 def calculate_financial_ratios(noi: float, annual_debt_service: float, loan_amount: float, 
@@ -105,7 +108,7 @@ def read_pdf_application(file_path: str) -> str:
         return f"Error reading PDF: {str(e)}"
 
 # ---------------------------------------------------------
-# 5. MAIN UI: FILE UPLOAD & EXECUTION CONTROLS
+# 5. STREAMLIT UI & EXECUTION CONTROLS
 # ---------------------------------------------------------
 st.markdown("### Step 1: Upload Loan Application Document")
 uploaded_file = st.file_uploader("Upload applicant PDF document", type=["pdf"])
@@ -113,22 +116,22 @@ uploaded_file = st.file_uploader("Upload applicant PDF document", type=["pdf"])
 target_application_path = "sample_application.pdf"
 
 if uploaded_file is not None:
-    # Save uploaded file to a temporary path so the PDF reader tool can read it
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         tmp_file.write(uploaded_file.getvalue())
         target_application_path = tmp_file.name
     st.success(f"Successfully uploaded: {uploaded_file.name}")
 else:
-    st.info("No file uploaded yet. Running with default sample payload if triggered.")
+    st.info("No file uploaded. Running with default sample payload if triggered.")
 
 if st.button("🚀 Run Multi-Agent Underwriting Assessment", type="primary"):
-    if api_key_input == "" and os.environ.get("GOOGLE_API_KEY") == "your_actual_gemini_api_key_here":
-        st.error("Please enter your Google Gemini API Key in the sidebar first.")
+    if os.environ.get("GOOGLE_API_KEY") in ["", "placeholder_key"]:
+        st.error("Please configure your Google Gemini API Key via Streamlit Secrets or the sidebar.")
     else:
-        with st.spinner("Agents are analyzing application, running calculations, and auditing compliance..."):
+        with st.spinner("Agents are analyzing document, executing deterministic calculations, and auditing policies..."):
             try:
                 gemini_llm = LLM(model="gemini/gemini-2.5-flash", temperature=0.1)
 
+                # Define Agents
                 intake_agent = Agent(
                     role="Senior Loan Intake Specialist",
                     goal="Ingest application data and output a structured breakdown of application figures.",
@@ -172,6 +175,7 @@ if st.button("🚀 Run Multi-Agent Underwriting Assessment", type="primary"):
                     verbose=True
                 )
 
+                # Define Tasks
                 task_intake = Task(
                     description=f"Read the application source from '{target_application_path}' using the PDF tool. If unavailable, use this fallback data: [Applicant: Apex Logistics LLC, Loan Amount: $1,200,000, NOI: $180,000, Annual Debt Service: $135,000, Monthly Gross Income: $25,000, Monthly Debt: $9,500, Collateral Value: $1,500,000, Credit Score: 705, Quick Ratio: 1.05].",
                     expected_output="Clean structured summary of application parameters.",
@@ -202,6 +206,7 @@ if st.button("🚀 Run Multi-Agent Underwriting Assessment", type="primary"):
                     agent=decision_agent
                 )
 
+                # Assemble Crew & Execute
                 underwriting_crew = Crew(
                     agents=[intake_agent, analyst_agent, risk_agent, policy_agent, decision_agent],
                     tasks=[task_intake, task_analysis, task_risk, task_policy, task_decision],
