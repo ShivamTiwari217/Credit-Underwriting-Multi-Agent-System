@@ -22,10 +22,8 @@ st.markdown("Powered by **CrewAI**, **Google Gemini**, **ChromaDB**, and **Strea
 # ---------------------------------------------------------
 # 2. SECURE ENVIRONMENT & API KEY CONFIGURATION
 # ---------------------------------------------------------
-# Satisfy crewAI internal validator check
 os.environ["OPENAI_API_KEY"] = "not-needed-but-satisfies-check"
 
-# Load Gemini API Key securely from Streamlit Secrets or Sidebar fallback
 if "GOOGLE_API_KEY" in st.secrets:
     os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
 else:
@@ -37,11 +35,12 @@ else:
         os.environ["GOOGLE_API_KEY"] = "placeholder_key"
 
 # ---------------------------------------------------------
-# 3. SETUP CHROMA_DB POLICY RAG (Cached to prevent re-init)
+# 3. SETUP EPHEMERAL CHROMA_DB POLICY RAG (Cached to prevent resource strain)
 # ---------------------------------------------------------
 @st.cache_resource
 def init_chroma_db():
-    client = chromadb.Client()
+    # Use EphemeralClient to minimize disk/memory usage and avoid cloud throttling
+    client = chromadb.EphemeralClient()
     emb_fn = embedding_functions.DefaultEmbeddingFunction()
     collection = client.get_or_create_collection(
         name="enterprise_lending_policies",
@@ -131,7 +130,6 @@ if st.button("🚀 Run Multi-Agent Underwriting Assessment", type="primary"):
             try:
                 gemini_llm = LLM(model="gemini/gemini-2.5-flash", temperature=0.1)
 
-                # Define Agents
                 intake_agent = Agent(
                     role="Senior Loan Intake Specialist",
                     goal="Ingest application data and output a structured breakdown of application figures.",
@@ -175,7 +173,6 @@ if st.button("🚀 Run Multi-Agent Underwriting Assessment", type="primary"):
                     verbose=True
                 )
 
-                # Define Tasks
                 task_intake = Task(
                     description=f"Read the application source from '{target_application_path}' using the PDF tool. If unavailable, use this fallback data: [Applicant: Apex Logistics LLC, Loan Amount: $1,200,000, NOI: $180,000, Annual Debt Service: $135,000, Monthly Gross Income: $25,000, Monthly Debt: $9,500, Collateral Value: $1,500,000, Credit Score: 705, Quick Ratio: 1.05].",
                     expected_output="Clean structured summary of application parameters.",
@@ -206,7 +203,6 @@ if st.button("🚀 Run Multi-Agent Underwriting Assessment", type="primary"):
                     agent=decision_agent
                 )
 
-                # Assemble Crew & Execute
                 underwriting_crew = Crew(
                     agents=[intake_agent, analyst_agent, risk_agent, policy_agent, decision_agent],
                     tasks=[task_intake, task_analysis, task_risk, task_policy, task_decision],
