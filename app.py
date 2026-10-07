@@ -22,7 +22,6 @@ st.markdown("Powered by **CrewAI**, **Google Gemini**, **ChromaDB**, and **Strea
 # ---------------------------------------------------------
 # 2. SECURE ENVIRONMENT & API KEY CONFIGURATION
 # ---------------------------------------------------------
-os.environ["OPENAI_API_KEY"] = "not-needed-but-satisfies-check"
 
 if "GOOGLE_API_KEY" in st.secrets:
     os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
@@ -39,7 +38,6 @@ else:
 # ---------------------------------------------------------
 @st.cache_resource
 def init_chroma_db():
-    # Use EphemeralClient to minimize disk/memory usage and avoid cloud throttling
     client = chromadb.EphemeralClient()
     emb_fn = embedding_functions.DefaultEmbeddingFunction()
     collection = client.get_or_create_collection(
@@ -71,7 +69,7 @@ def search_lending_policies(query: str) -> str:
     return "\n".join(documents) if documents else "No matching institutional policy found."
 
 # ---------------------------------------------------------
-# 4. DETERMINISTIC TOOLS (PDF Reader & Cost-Optimized Math Calculator)
+# 4. DETERMINISTIC TOOLS (PDF Reader, Math Calculator, & Risk Scorer)
 # ---------------------------------------------------------
 @tool("Deterministic Financial Ratio Calculator")
 def calculate_financial_ratios(noi: float, annual_debt_service: float, loan_amount: float, 
@@ -93,6 +91,67 @@ def calculate_financial_ratios(noi: float, annual_debt_service: float, loan_amou
         """
     except Exception as e:
         return f"Calculation Error: {str(e)}"
+
+@tool("Deterministic Risk Scorer")
+def calculate_risk_score(dscr: float, ltv: float, credit_score: int, quick_ratio: float, loan_amount: float) -> str:
+    """Computes a deterministic credit risk score, tier, and compliance flags based on hard financial rules."""
+    try:
+        risk_flags = []
+        score_points = 100
+
+        # 1. Credit Score Evaluation
+        if credit_score >= 720:
+            credit_tier = "Tier 1 (Low Risk)"
+        elif 680 <= credit_score <= 719:
+            credit_tier = "Tier 2 (Moderate Risk - Manual Review)"
+            score_points -= 15
+            risk_flags.append("Credit score requires secondary review (Rule 103).")
+        else:
+            credit_tier = "Tier 3 (High Risk)"
+            score_points -= 35
+            risk_flags.append("Credit score below institutional threshold.")
+
+        # 2. DSCR Evaluation
+        if dscr >= 1.25:
+            dscr_status = "Pass"
+        else:
+            dscr_status = "Fail"
+            score_points -= 25
+            risk_flags.append(f"DSCR of {dscr:.2f}x breaches minimum 1.25x requirement (Rule 101).")
+
+        # 3. LTV Evaluation
+        if ltv <= 80.0:
+            ltv_status = "Pass"
+        else:
+            ltv_status = "Fail"
+            score_points -= 20
+            risk_flags.append(f"LTV of {ltv:.2f}% exceeds 80% maximum ceiling (Rule 104).")
+
+        # 4. Exposure Check
+        if loan_amount > 5000000:
+            score_points -= 15
+            risk_flags.append("Single-borrower exposure exceeds $5,000,000 threshold (Rule 106).")
+
+        # Determine Final Quantitative Risk Level
+        if score_points >= 85 and not risk_flags:
+            risk_level = "LOW RISK"
+        elif score_points >= 60:
+            risk_level = "MEDIUM RISK (Conditional)"
+        else:
+            risk_level = "HIGH RISK (Denial Recommended)"
+
+        return f"""
+        --- DETERMINISTIC RISK ASSESSMENT ---
+        - Final Quantitative Risk Score: {score_points}/100
+        - Overall Risk Classification: {risk_level}
+        - Principal Credit Tier: {credit_tier}
+        - DSCR Status: {dscr_status}
+        - LTV Status: {ltv_status}
+        - Triggered Risk Flags: {risk_flags if risk_flags else "None"}
+        --------------------------------------
+        """
+    except Exception as e:
+        return f"Risk Calculation Error: {str(e)}"
 
 @tool("Read Loan Application PDF")
 def read_pdf_application(file_path: str) -> str:
@@ -128,7 +187,7 @@ if st.button("🚀 Run Multi-Agent Underwriting Assessment", type="primary"):
     else:
         with st.spinner("Agents are analyzing document, executing deterministic calculations, and auditing policies..."):
             try:
-                gemini_llm = LLM(model="gemini/gemini-3.6-flash", temperature=0.1)
+                gemini_llm = LLM(model="gemini/gemini-2.5-flash", temperature=0.1)
 
                 intake_agent = Agent(
                     role="Senior Loan Intake Specialist",
@@ -149,9 +208,10 @@ if st.button("🚀 Run Multi-Agent Underwriting Assessment", type="primary"):
                 )
 
                 risk_agent = Agent(
-                    role="Credit Risk Assessor",
-                    goal="Evaluate overall borrower risk profile and collateral stability.",
-                    backstory="Seasoned risk officer focusing on exposure limits and collateral buffers.",
+                    role="Deterministic Credit Risk Assessor",
+                    goal="Evaluate borrower risk profile programmatically using the risk scoring tool.",
+                    backstory="You never guess risk scores. You evaluate structured metrics against exact institutional risk matrices using the tool.",
+                    tools=[calculate_risk_score],
                     llm=gemini_llm,
                     verbose=True
                 )
@@ -186,8 +246,8 @@ if st.button("🚀 Run Multi-Agent Underwriting Assessment", type="primary"):
                 )
 
                 task_risk = Task(
-                    description="Evaluate the risk profile using calculated ratios, checking against single-borrower exposure ceilings ($5M limit).",
-                    expected_output="Risk assessment report with score/tier.",
+                    description="Take the computed financial ratios (DSCR, LTV) and applicant profile parameters, then invoke the 'Deterministic Risk Scorer' tool with exact numbers (dscr, ltv, credit_score, quick_ratio, loan_amount).",
+                    expected_output="Programmatically derived risk score, classification, and audit flags.",
                     agent=risk_agent
                 )
 
